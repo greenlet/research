@@ -4,7 +4,7 @@ import cv2
 from nibabel import quaternions as quat
 import numpy as np
 from stl.mesh import Mesh
-
+import pcl
 
 def get_pcn_from_mesh(mesh):
     eps = 1e-6
@@ -39,11 +39,11 @@ def pose_dict_to_arr(pose):
 
 def calc_normals(image_points):
     def ind_is_valid(ind):
-        return ind[0] > 0 and ind[0] < image_points.shape[0] \
-               and ind[1] > 0 and ind[1] < image_points.shape[1]
+        return 0 < ind[0] < image_points.shape[0] \
+               and 0 < ind[1] < image_points.shape[1]
 
     def len_is_valid(l):
-        return l > 0.001 and l < 0.5
+        return 0.001 < l < 0.5
 
     def get_normal(ind0, shift1, shift2):
         ind1 = ind0[0] + shift1[0], ind0[1] + shift1[1]
@@ -103,7 +103,7 @@ def calc_pcn_from_depth(depth, cam_int, cam_p, cam_rot, resize_factor=2):
     h, w = depth.shape
     y, x = np.array(range(h), np.float32), np.array(range(w), np.float32)
     y = (y * resize_factor - cam_int['cy']) / cam_int['fy']
-    x = (x * resize_factor - cam_int['cx']) / cam_int['fy']
+    x = (x * resize_factor - cam_int['cx']) / cam_int['fx']
     pc = np.ones((h, w, 3), np.float32)
     pc[:, :, 0] = np.repeat(x[np.newaxis, :], h, axis=0)
     pc[:, :, 1] = np.repeat(y[:, np.newaxis], w, axis=1)

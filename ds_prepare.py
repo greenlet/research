@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import shutil
 import numpy as np
 from PIL import Image, ImageDraw
 import utils
@@ -18,18 +19,23 @@ def iterate_metas(path):
 
 
 def iterate_files(ds_path):
+    if not ds_path:
+        return
     prefix = utils.prefixed(ds_path)
     meta_path = prefix('meta')
     for meta in iterate_metas(meta_path):
         for cam in meta['cams'].values():
-            image_path, depth_path = [prefix(cam[k]) for k in ('img', 'depth_map_name')]
-            image_name, depth_name = [os.path.split(p)[-1] for p in (image_path, depth_path)]
-            # if image_name == 'cam_100_img_0000157_1574369671.png':
-            #     continue
+            image_path = prefix(cam['img'])
+            image_name = os.path.split(image_path)[-1]
             image = Image.open(image_path)
-            depth = np.fromfile(depth_path, np.float32) / 100
-            w, h = image.size
-            depth = np.reshape(depth, (h, w))
+            depth_path = cam.get('depth_map_name')
+            depth_name, depth = None, None
+            if depth_path:
+                depth_path = prefix(depth_path)
+                depth_name = os.path.split(depth_path)[-1]
+                depth = np.fromfile(depth_path, np.float32) / 100
+                w, h = image.size
+                depth = np.reshape(depth, (h, w))
             yield cam, image_path, depth_path, image_name, depth_name, image, depth
 
 
@@ -80,29 +86,32 @@ def make_train_test_ds(ds_path, resize_factor=2):
     for cam, image_path, depth_path, image_name, depth_name, image, depth in iterate_files(ds_path):
         print(image_name, depth_name)
 
-        # Fix depth
-        depth_excess_inds = np.where(depth > MAX_DEPTH)
-        if len(depth_excess_inds[0]):
-            for p in zip(*depth_excess_inds):
-                fix_depth(depth, p)
-        depth *= 1000
-        depth = depth.astype(np.int32)
-        depth_i = Image.fromarray(depth, 'I')
+        if resize_factor != 1:
+            new_size = (image.size[0] // resize_factor, image.size[1] // resize_factor)
+            # Resize and save image
+            image = image.resize(new_size, Image.BILINEAR)
 
-        # Resize and save depth as png
-        new_size = (image.size[0] // resize_factor, image.size[1] // resize_factor)
-        depth_i = depth_i.resize(new_size)
-        bts_depth_name = os.path.splitext(depth_name)[0] + '.png'
-        bts_depth_path = os.path.join(bts_data_path, bts_depth_name)
-        depth_i.save(bts_depth_path)
-
-        # Resize and save image
-        image = image.resize(new_size, Image.BILINEAR)
         bts_image_name = image_name
         bts_image_path = os.path.join(bts_data_path, bts_image_name)
         image.save(bts_image_path)
 
-        res.append((bts_image_name, bts_depth_name, cam['intrinsics']['fx']))
+        bts_depth_name = 'none'
+        if depth is not None:
+            # Fix depth
+            depth_excess_inds = np.where(depth > MAX_DEPTH)
+            if len(depth_excess_inds[0]):
+                for p in zip(*depth_excess_inds):
+                    fix_depth(depth, p)
+            depth *= 1000
+            depth = depth.astype(np.int32)
+            depth_i = Image.fromarray(depth, 'I')
+            # Resize and save depth as png
+            depth_i = depth_i.resize(new_size)
+            bts_depth_name = os.path.splitext(depth_name)[0] + '.png'
+            bts_depth_path = os.path.join(bts_data_path, bts_depth_name)
+            depth_i.save(bts_depth_path)
+
+        res.append((bts_image_name, bts_depth_name, cam['intrinsics']['fx'] / resize_factor))
 
     res_file_name = 'meta.txt'
     res_file_path = os.path.join(bts_path, res_file_name)
@@ -142,9 +151,15 @@ def calc_metrics(ds_path):
 
 
 if __name__ == '__main__':
-    ds_path = '/media/burakov/Alpha/Data/Arrival/CORNER_NODE_LH_1000093_E_CORNER_NODE_RH_1000094_D_on_agv_000500/'
+    # ds_path = '/media/burakov/Alpha/Data/CORNER_NODE_LH_1000093_E_CORNER_NODE_RH_1000094_D_on_agv_000500/'
+    # ds_path = '/home/burakov/Alpha/Data/2Parts_assembling_left_000500/'
     # read_vis(ds_path)
-    # make_train_test_ds(ds_path)
+    # ds_path = '/media/burakov/HardDrive/Data/CORNER_NODE_LH_1000093_E_CORNER_NODE_RH_1000094_D_on_agv_000500/'
+    ds_path = '/media/burakov/HardDrive/Data/20200130_fslab1/'
+    # ds_path = '/media/burakov/HardDrive/Data/2Parts_assembling_left_001000/'
+
+    # read_vis(ds_path)
+    make_train_test_ds(ds_path, 2)
     # split_train_test(ds_path)
-    calc_metrics(ds_path)
+    # calc_metrics(ds_path)
 
